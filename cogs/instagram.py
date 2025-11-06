@@ -1,346 +1,257 @@
-"""
-Instagram Cog - Instagram Page Management
-All Instagram commands and functionality
-"""
-
-import discord
-from discord import app_commands
+# instagram_cog.py
+from discord import app_commands, ui
 from discord.ext import commands
-import aiohttp
-from datetime import datetime
-import asyncio
-import sys
+import discord
+import requests
+import sqlite3
 import os
+from urllib.parse import urlencode
+import asyncio
 
-# Add parent directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = 'database.db'
 
-from utils.database import db
-from utils.oauth import oauth
-from utils.scheduler import scheduler
-import config
+APP_ID = os.getenv("APP_ID")
+APP_SECRET = os.getenv("APP_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+GRAPH_API_VERSION = "v20.0"
 
 
-class Instagram(commands.Cog):
-    """Instagram commands for Discord bot"""
-    
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT NOT NULL UNIQUE,
+            username TEXT NOT NULL,
+            instagram_token TEXT NOT NULL,
+            instagram_id TEXT
+        );
+    ''')
+    conn.close()
+
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def insert_user(discord_id, username, token, instagram_id=None):
+    conn = get_db_connection()
+    with conn:
+        conn.execute('''
+            INSERT OR REPLACE INTO users (discord_id, username, instagram_token, instagram_id)
+            VALUES (?, ?, ?, ?)
+        ''', (discord_id, username, token, instagram_id))
+    conn.close()
+
+
+def remove_user(discord_id):
+    conn = get_db_connection()
+    with conn:
+        conn.execute('DELETE FROM users WHERE discord_id = ?', (discord_id,))
+    conn.close()
+
+
+def get_user_data(discord_id):
+    conn = get_db_connection()
+    cursor = conn.execute('SELECT * FROM users WHERE discord_id = ?', (str(discord_id),))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+def call_api(params, endpoint):
+    resp = requests.get(f"https://graph.instagram.com/{endpoint}", params=params)
+    return resp.json()
+
+
+def call_api_post(params, endpoint):
+    resp = requests.post(f"https://graph.instagram.com/{endpoint}", data=params)
+    try:
+        return resp.json()
+    except ValueError:
+        return {"error": "invalid_json_response", "status_code": resp.status_code, "text": resp.text}
+
+
+def format_dict(data, indent=0):
+    if not isinstance(data, dict):
+        return str(data)
+    formatted = ""
+    for key, value in data.items():
+        if isinstance(value, dict):
+            formatted += f"{' ' * indent}**{key}**:\n{format_dict(value, indent + 2)}\n"
+        elif isinstance(value, list):
+            formatted += f"{' ' * indent}**{key}**:\n"
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    formatted += f"{' ' * (indent + 2)}[{i + 1}] {format_dict(item, indent + 4)}\n"
+                else:
+                    formatted += f"{' ' * (indent + 2)}[{i + 1}] `{item}`\n"
+        else:
+            formatted += f"{' ' * indent}**{key}**: `{value}`\n"
+    return formatted
+
+
+def shorten_url(url, max_len=40):
+    if len(url) <= max_len:
+        return url
+    return url[:max_len] + "..."
+
+
+class InstagramPostsView(ui.View):
+    def __init__(self, post_data, token):
+        super().__init__(timeout=None)
+        self.post_data = post_data
+        self.token = token
+
+    @ui.button(label="Delete Post", style=discord.ButtonStyle.danger)
+    async def delete_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        resp = requests.delete(f"https://graph.instagram.com/{self.post_data['id']}", params={"access_token": self.token})
+        result = resp.json() if resp.text else {"status": "success"}
+        await interaction.followup.send(f"Post deleted:\n{format_dict(result)}", ephemeral=True)
+        self.stop()
+
+    @ui.button(label="View Details", style=discord.ButtonStyle.secondary)
+    async def details_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(f"Post Details:\n{format_dict(self.post_data)}", ephemeral=True)
+
+    @ui.button(label="View Insights", style=discord.ButtonStyle.primary)
+    async def view_insights(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        post_type = self.post_data.get("media_type", "IMAGE").lower()
+
+        metrics_map = {
+            "image": "reach,likes,comments,saved",
+            "video": "reach,likes,comments,video_views,shares",
+            "reels": "reach,likes,comments,plays,shares,saved"
+        }
+
+        metrics = metrics_map.get(post_type, "reach,likes,comments")
+        params = {"metric": metrics, "access_token": self.token}
+        resp = call_api(params, f"{self.post_data['id']}/insights")
+
+        embed = discord.Embed(title=f"Insights for Post {self.post_data['id']}", color=discord.Color.green())
+        if "data" in resp and isinstance(resp["data"], list):
+            for metric in resp["data"]:
+                name = metric.get("name", "Unknown")
+                values = metric.get("values", [])
+                if values:
+                    embed.add_field(name=name, value=str(values[-1].get("value", "N/A")), inline=True)
+        else:
+            embed.description = str(resp)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class InstagramCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.rate_limiter = RateLimiter()
-        print('📸 Instagram cog initialized')
+        init_db()
 
-    async def cog_load(self):
-        """Start OAuth server and scheduler when cog loads"""
-        print(' Loading Instagram cog...')
-        
-        # Start OAuth server
-        await oauth.start_server()
-        
-        # Setup scheduler
-        scheduler.set_instagram_callback(self.publish_scheduled_post)
-        scheduler.schedule_check(db)
-        scheduler.start()
-        
-        print('✅ Instagram cog loaded successfully')
+    async def get_token_or_error(self, interaction):
+        user = get_user_data(interaction.user.id)
+        if not user:
+            await interaction.response.send_message("You are not registered. Use /insta_login_dev first.", ephemeral=True)
+            return None, None
+        token = user["instagram_token"]
+        ig_id = user["instagram_id"] or user["username"]
+        return token, ig_id
 
-    # ---------------------------
-    #  CONNECT / DISCONNECT
-    # ---------------------------
-    @app_commands.command(name="ig-connect", description="Connect your Instagram Account")
-    async def connect(self, interaction: discord.Interaction):
-        server_id = str(interaction.guild_id)
+    @app_commands.command(name="insta_login_dev", description="Manually register a token")
+    @app_commands.describe(token="Your Instagram access token", username="Your Instagram username", instagram_id="Instagram numeric ID (optional)")
+    async def insta_login_dev(self, interaction: discord.Interaction, token: str, username: str, instagram_id: str = None):
+        await interaction.response.defer(ephemeral=True)
+        insert_user(str(interaction.user.id), username, token, instagram_id)
+        await interaction.followup.send("Token manually inserted into database.", ephemeral=True)
 
-        existing = db.get_instagram_account(server_id)
-        if existing:
-            await interaction.response.send_message(
-                f"✅ Already connected to **{existing.get('username', 'Instagram Account')}**!\nUse `/ig-disconnect` to reconnect.",
-                ephemeral=True
-            )
+    @app_commands.command(name="instagram_post", description="Post an image with caption")
+    @app_commands.describe(caption="Text caption for the image", image_url="URL of the image to post")
+    async def instagram_post(self, interaction: discord.Interaction, caption: str, image_url: str):
+        await interaction.response.defer(ephemeral=True)
+        token, ig_id = await self.get_token_or_error(interaction)
+        if not token:
             return
 
-        # Generate Instagram OAuth URL
-        auth_url = oauth.get_instagram_auth_url(server_id)
-        future = asyncio.Future()
-        oauth.pending_auth[server_id] = future
+        params_create = {"image_url": image_url, "caption": caption, "access_token": token}
+        create_resp = call_api_post(params_create, f"{ig_id}/media")
+        if "id" not in create_resp:
+            await interaction.followup.send(f"Failed to create post: {create_resp}", ephemeral=True)
+            return
+        creation_id = create_resp["id"]
 
-        embed = discord.Embed(
-            title="📸 Connect Instagram Account",
-            description=f"**Step 1:** [Click here to authorize Instagram]({auth_url})\n\n**Step 2:** Allow permissions for posts and insights.\n⏱️ Link expires in 5 minutes",
-            color=config.COLOR_INSTAGRAM
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Wait until media is ready
+        for _ in range(10):
+            status = call_api({"fields": "status_code", "access_token": token}, creation_id)
+            if status.get("status_code") == "FINISHED":
+                break
+            await asyncio.sleep(2)
 
-        try:
-            account_data = await asyncio.wait_for(future, timeout=300)
-            db.save_instagram_account(server_id, account_data)
+        publish_resp = call_api_post({"creation_id": creation_id, "access_token": token}, f"{ig_id}/media_publish")
+        await interaction.followup.send(f"Post published:\n```json\n{publish_resp}\n```", ephemeral=True)
 
-            success = discord.Embed(
-                title="✅ Instagram Connected!",
-                description=f"Connected as **{account_data['username']}**",
-                color=config.COLOR_SUCCESS
-            )
-            success.add_field(
-                name="📝 Commands",
-                value="`/ig-post`, `/ig-schedule`, `/ig-recent`, `/ig-stats`, `/ig-delete`",
-                inline=False
-            )
-            await interaction.followup.send(embed=success, ephemeral=True)
-        except asyncio.TimeoutError:
-            await interaction.followup.send("❌ Connection timed out. Try `/ig-connect` again.", ephemeral=True)
-        finally:
-            oauth.pending_auth.pop(server_id, None)
+    @app_commands.command(name="instagram_post_reel", description="Post a reel with caption")
+    @app_commands.describe(caption="Text caption for the reel", video_url="URL of the video to post")
+    async def instagram_post_reel(self, interaction: discord.Interaction, caption: str, video_url: str):
+        await interaction.response.defer(ephemeral=True)
+        token, ig_id = await self.get_token_or_error(interaction)
+        if not token:
+            return
 
-    @app_commands.command(name="ig-disconnect", description="Disconnect Instagram Account")
+        params_create = {"media_type": "REELS", "video_url": video_url, "caption": caption, "access_token": token}
+        create_resp = call_api_post(params_create, f"{ig_id}/media")
+        if "id" not in create_resp:
+            await interaction.followup.send(f"Failed to create reel: {create_resp}", ephemeral=True)
+            return
+        creation_id = create_resp["id"]
+
+        for _ in range(10):
+            status = call_api({"fields": "status_code", "access_token": token}, creation_id)
+            if status.get("status_code") == "FINISHED":
+                break
+            await asyncio.sleep(2)
+
+        publish_resp = call_api_post({"creation_id": creation_id, "access_token": token}, f"{ig_id}/media_publish")
+        await interaction.followup.send(f"Reel published:\n```json\n{publish_resp}\n```", ephemeral=True)
+
+    @app_commands.command(name="instagram_posts", description="Get all your Instagram posts")
+    async def get_all_posts(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        token, _ = await self.get_token_or_error(interaction)
+        if not token:
+            return
+
+        params = {"fields": "id,caption,media_type,media_url,permalink,timestamp", "access_token": token}
+        result = call_api(params, "me/media")
+        if "data" not in result or not result["data"]:
+            await interaction.followup.send("No posts found.", ephemeral=True)
+            return
+
+        for post in result["data"]:
+            caption = post.get('caption', 'No caption')
+            media_type = post.get('media_type')
+            media_url = post.get('media_url', '')
+            url_short = shorten_url(media_url)
+            timestamp = post.get('timestamp', '')
+
+            embed = discord.Embed(title=f"Post {post['id']}", color=discord.Color.blue())
+            embed.add_field(name="Caption", value=caption, inline=False)
+            embed.add_field(name="Type", value=media_type, inline=True)
+            embed.add_field(name="URL", value=url_short, inline=False)
+            embed.add_field(name="Timestamp", value=timestamp, inline=True)
+            if media_url:
+                embed.set_image(url=media_url)
+
+            view = InstagramPostsView(post, token)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="disconnect", description="Disconnect your Instagram account from the bot")
     async def disconnect(self, interaction: discord.Interaction):
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.response.send_message("❌ No Instagram account connected.", ephemeral=True)
-            return
-
-        db.delete_instagram_account(server_id)
-        await interaction.response.send_message(f"✅ Disconnected **{account['username']}**", ephemeral=True)
-
-    # ---------------------------
-    #  POST / IMAGE / SCHEDULE
-    # ---------------------------
-    @app_commands.command(name="ig-post", description="Post image to Instagram")
-    @app_commands.describe(image_url="Public image URL", caption="Optional caption")
-    async def post(self, interaction: discord.Interaction, image_url: str, caption: str = None):
-        await interaction.response.defer()
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.followup.send("❌ No Instagram account connected. Use `/ig-connect` first.")
-            return
-
-        try:
-            await self.rate_limiter.wait()
-            post_id = await self.post_photo(account['ig_user_id'], account['access_token'], image_url, caption)
-
-            db.save_instagram_post({
-                'server_id': server_id,
-                'ig_user_id': account['ig_user_id'],
-                'ig_post_id': post_id,
-                'caption': caption,
-                'image_url': image_url,
-                'status': 'published',
-                'platform': 'instagram'
-            })
-
-            embed = discord.Embed(
-                title="✅ Posted to Instagram!",
-                description=caption or "No caption",
-                color=config.COLOR_SUCCESS
-            )
-            embed.set_image(url=image_url)
-            await interaction.followup.send(embed=embed)
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error posting: {str(e)}")
-
-    @app_commands.command(name="ig-schedule", description="Schedule an Instagram post")
-    @app_commands.describe(
-        image_url="Public image URL",
-        caption="Caption for the post",
-        datetime_str="When to post (YYYY-MM-DD HH:MM UTC)"
-    )
-    async def schedule(self, interaction: discord.Interaction, image_url: str, caption: str, datetime_str: str):
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.response.send_message("❌ No Instagram account connected.", ephemeral=True)
-            return
-
-        try:
-            scheduled_at = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
-            if scheduled_at <= datetime.utcnow():
-                await interaction.response.send_message("❌ Must be a future date/time.", ephemeral=True)
-                return
-
-            post_id = db.save_instagram_post({
-                'server_id': server_id,
-                'ig_user_id': account['ig_user_id'],
-                'image_url': image_url,
-                'caption': caption,
-                'scheduled_at': scheduled_at,
-                'status': 'scheduled',
-                'platform': 'instagram'
-            })
-
-            embed = discord.Embed(
-                title="⏰ Post Scheduled",
-                description=f"Will post on **{datetime_str} UTC**",
-                color=config.COLOR_WARNING
-            )
-            embed.set_image(url=image_url)
-            await interaction.response.send_message(embed=embed)
-
-        except Exception as e:
-            await interaction.response.send_message(f"❌ Scheduling error: {e}", ephemeral=True)
-
-    # ---------------------------
-    #  RECENT / STATS / DELETE
-    # ---------------------------
-    @app_commands.command(name="ig-recent", description="Show recent Instagram posts")
-    async def recent(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.followup.send("❌ No Instagram account connected.")
-            return
-
-        try:
-            await self.rate_limiter.wait()
-            url = f"{config.INSTAGRAM_GRAPH_URL}/{account['ig_user_id']}/media"
-            params = {'fields': 'id,caption,media_url,permalink,timestamp', 'access_token': account['access_token']}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    data = await resp.json()
-                    posts = data.get('data', [])
-                    if not posts:
-                        await interaction.followup.send("📭 No posts found.")
-                        return
-
-                    embed = discord.Embed(
-                        title=f"📸 Recent Instagram Posts ({len(posts)} found)",
-                        color=config.COLOR_INSTAGRAM
-                    )
-                    for p in posts[:5]:
-                        caption = p.get('caption', 'No caption')[:100]
-                        embed.add_field(
-                            name=f"🕓 {p['timestamp'][:10]}",
-                            value=f"{caption}\n[View Post]({p['permalink']})",
-                            inline=False
-                        )
-                    await interaction.followup.send(embed=embed)
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error: {str(e)}")
-
-    @app_commands.command(name="ig-stats", description="Get stats for an Instagram post")
-    @app_commands.describe(post_id="Instagram post ID")
-    async def stats(self, interaction: discord.Interaction, post_id: str):
-        await interaction.response.defer()
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.followup.send("❌ No Instagram account connected.")
-            return
-
-        try:
-            url = f"{config.INSTAGRAM_GRAPH_URL}/{post_id}/insights"
-            params = {
-                'metric': 'impressions,reach,engagement,saved',
-                'access_token': account['access_token']
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
-                    data = await resp.json()
-                    metrics = {m['name']: m['values'][0]['value'] for m in data.get('data', [])}
-
-                    embed = discord.Embed(
-                        title="📊 Instagram Insights",
-                        description=f"Post `{post_id}` statistics",
-                        color=config.COLOR_INSTAGRAM
-                    )
-                    for k, v in metrics.items():
-                        embed.add_field(name=k.title(), value=f"{v:,}", inline=True)
-                    await interaction.followup.send(embed=embed)
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error fetching stats: {str(e)}")
-
-    @app_commands.command(name="ig-delete", description="Delete an Instagram post")
-    async def delete(self, interaction: discord.Interaction, post_id: str):
-        await interaction.response.defer()
-        server_id = str(interaction.guild_id)
-        account = db.get_instagram_account(server_id)
-
-        if not account:
-            await interaction.followup.send("❌ No Instagram account connected.")
-            return
-
-        try:
-            url = f"{config.INSTAGRAM_GRAPH_URL}/{post_id}"
-            params = {'access_token': account['access_token']}
-
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, params=params) as resp:
-                    if resp.status == 200:
-                        await interaction.followup.send(f"✅ Deleted post `{post_id}`")
-                    else:
-                        await interaction.followup.send(f"❌ Failed: {await resp.text()}")
-
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error deleting post: {str(e)}")
-
-    async def post_photo(self, ig_user_id, access_token, image_url, caption=None):
-        """Helper to post image"""
-        url = f"{config.INSTAGRAM_GRAPH_URL}/{ig_user_id}/media"
-        params = {'image_url': image_url, 'caption': caption or '', 'access_token': access_token}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, params=params) as resp:
-                if resp.status != 200:
-                    raise Exception(await resp.text())
-                data = await resp.json()
-                creation_id = data['id']
-
-        # Publish media
-        publish_url = f"{config.INSTAGRAM_GRAPH_URL}/{ig_user_id}/media_publish"
-        publish_params = {'creation_id': creation_id, 'access_token': access_token}
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(publish_url, params=publish_params) as resp:
-                if resp.status != 200:
-                    raise Exception(await resp.text())
-                data = await resp.json()
-                return data['id']
-
-    async def publish_scheduled_post(self, post):
-        """Publish scheduled Instagram post"""
-        try:
-            account = db.get_instagram_account(post['server_id'])
-            if not account:
-                db.update_instagram_post_status(post['_id'], 'failed')
-                print(f"❌ No account found for server {post['server_id']}")
-                return
-
-            await self.rate_limiter.wait()
-            post_id = await self.post_photo(account['ig_user_id'], account['access_token'], post['image_url'], post['caption'])
-            db.update_instagram_post_status(post['_id'], 'published', post_id)
-            print(f"✅ Published scheduled Instagram post: {post_id}")
-        except Exception as e:
-            print(f"❌ Failed to publish Instagram post: {e}")
-            db.update_instagram_post_status(post['_id'], 'failed')
-
-
-class RateLimiter:
-    """Instagram API rate limiter"""
-    def __init__(self):
-        self.calls = []
-        self.max_calls = config.INSTAGRAM_MAX_CALLS
-        self.window = config.RATE_LIMIT_WINDOW
-
-    async def wait(self):
-        now = datetime.utcnow().timestamp()
-        self.calls = [t for t in self.calls if t > now - self.window]
-        if len(self.calls) >= self.max_calls:
-            wait_time = self.calls[0] + self.window - now
-            print(f'⏸️ Instagram rate limit reached, waiting {wait_time:.0f}s')
-            await asyncio.sleep(wait_time)
-            self.calls = []
-        self.calls.append(now)
+        await interaction.response.defer(ephemeral=True)
+        remove_user(str(interaction.user.id))
+        await interaction.followup.send("Your Instagram account has been disconnected.", ephemeral=True)
 
 
 async def setup(bot):
-    await bot.add_cog(Instagram(bot))
+    await bot.add_cog(InstagramCog(bot))

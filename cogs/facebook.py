@@ -46,7 +46,7 @@ class Facebook(commands.Cog):
         scheduler.schedule_check(db)
         scheduler.start()
         
-        print('✅ Facebook cog loaded successfully')
+        print(' Facebook cog loaded successfully')
     
     @app_commands.command(name="fb-connect", description="Connect your Facebook Page")
 
@@ -62,7 +62,7 @@ class Facebook(commands.Cog):
         existing = db.get_facebook_account(server_id)
         if existing:
             await interaction.response.send_message(
-                f"✅ Already connected to **{existing.get('page_name', 'Facebook Page')}**!\nUse `/fb-disconnect` to reconnect.",
+                f" Already connected to **{existing.get('page_name', 'Facebook Page')}**!\nUse `/fb-disconnect` to reconnect.",
                 ephemeral=True
             )
             return
@@ -81,7 +81,7 @@ class Facebook(commands.Cog):
             color=config.COLOR_FACEBOOK
         )
         embed.add_field(
-            name="✅ Requirements",
+            name="Requirements",
             value="• Facebook account\n• Admin access to a Facebook Page\n• Page with posts enabled",
             inline=False
         )
@@ -96,7 +96,7 @@ class Facebook(commands.Cog):
             
             if not pages:
                 await interaction.followup.send(
-                    "❌ No Facebook Pages found.\n\nMake sure:\n• You're an admin of at least one page\n• The page has posting permissions",
+                    "No Facebook Pages found.\n\nMake sure:\n• You're an admin of at least one page\n• The page has posting permissions",
                     ephemeral=True
                 )
                 return
@@ -119,12 +119,12 @@ class Facebook(commands.Cog):
             })
             
             success_embed = discord.Embed(
-                title="✅ Facebook Page Connected!",
+                title="Facebook Page Connected!",
                 description=info_msg,
                 color=config.COLOR_SUCCESS
             )
             success_embed.add_field(
-                name="📝 Available Commands",
+                name=" Available Commands",
                 value="`/fb-post` - Post text/link\n`/fb-post-image` - Post image\n`/fb-schedule` - Schedule post\n`/fb-recent` - View recent posts\n`/fb-stats` - Get analytics",
                 inline=False
             )
@@ -133,12 +133,12 @@ class Facebook(commands.Cog):
             
         except asyncio.TimeoutError:
             await interaction.followup.send(
-                "❌ Connection timed out after 5 minutes.\n\nPlease try `/fb-connect` again.",
+                "Connection timed out after 5 minutes.\n\nPlease try `/fb-connect` again.",
                 ephemeral=True
             )
         except Exception as e:
             await interaction.followup.send(
-                f"❌ Connection error: {str(e)}\n\nPlease try again or contact support.",
+                f"Connection error: {str(e)}\n\nPlease try again or contact support.",
                 ephemeral=True
             )
         finally:
@@ -158,7 +158,7 @@ class Facebook(commands.Cog):
         account = db.get_facebook_account(server_id)
         if not account:
             await interaction.response.send_message(
-                "❌ No Facebook Page connected.\n\nUse `/fb-connect` to connect a page.",
+                " No Facebook Page connected.\n\nUse `/fb-connect` to connect a page.",
                 ephemeral=True
             )
             return
@@ -167,7 +167,7 @@ class Facebook(commands.Cog):
         db.delete_facebook_account(server_id)
         
         embed = discord.Embed(
-            title="✅ Facebook Page Disconnected",
+            title=" Facebook Page Disconnected",
             description=f"Disconnected from **{page_name}**",
             color=config.COLOR_SUCCESS
         )
@@ -195,7 +195,7 @@ class Facebook(commands.Cog):
         
         if not account:
             await interaction.followup.send(
-                "❌ No Facebook Page connected.\n\nUse `/fb-connect` first."
+                " No Facebook Page connected.\n\nUse `/fb-connect` first."
             )
             return
         
@@ -224,12 +224,12 @@ class Facebook(commands.Cog):
             
             # Success message
             embed = discord.Embed(
-                title="✅ Posted to Facebook!",
+                title="Posted to Facebook!",
                 description=message[:300] + ('...' if len(message) > 300 else ''),
                 color=config.COLOR_SUCCESS
             )
-            embed.add_field(name="📄 Page", value=account['page_name'], inline=True)
-            embed.add_field(name="🆔 Post ID", value=post_id.split('_')[1][:10] + '...', inline=True)
+            embed.add_field(name=" Page", value=account['page_name'], inline=True)
+            embed.add_field(name="🆔Post ID", value=post_id.split('_')[1][:10] + '...', inline=True)
             if link:
                 embed.add_field(name="🔗 Link", value=link, inline=False)
             embed.set_footer(text=f"Posted at {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
@@ -238,7 +238,7 @@ class Facebook(commands.Cog):
             
         except Exception as e:
             error_embed = discord.Embed(
-                title="❌ Posting Failed",
+                title=" Posting Failed",
                 description=f"Error: {str(e)}",
                 color=config.COLOR_ERROR
             )
@@ -261,7 +261,7 @@ class Facebook(commands.Cog):
         account = db.get_facebook_account(server_id)
         
         if not account:
-            await interaction.followup.send("❌ No Facebook Page connected. Use `/fb-connect` first.")
+            await interaction.followup.send(" No Facebook Page connected. Use `/fb-connect` first.")
             return
         
         try:
@@ -287,7 +287,7 @@ class Facebook(commands.Cog):
             })
             
             embed = discord.Embed(
-                title="✅ Image Posted to Facebook!",
+                title="Image Posted to Facebook!",
                 description=caption[:200] if caption else "No caption",
                 color=config.COLOR_SUCCESS
             )
@@ -298,7 +298,7 @@ class Facebook(commands.Cog):
             await interaction.followup.send(embed=embed)
             
         except Exception as e:
-            await interaction.followup.send(f"❌ Error posting image: {str(e)}")
+            await interaction.followup.send(f"Error posting image: {str(e)}")
     
     @app_commands.command(name="fb-schedule", description="Schedule a Facebook post for later")
     @app_commands.describe(
@@ -318,7 +318,7 @@ class Facebook(commands.Cog):
         
         if not account:
             await interaction.response.send_message(
-                "❌ No Facebook Page connected. Use `/fb-connect` first.",
+                "No Facebook Page connected. Use `/fb-connect` first.",
                 ephemeral=True
             )
             return
@@ -330,7 +330,7 @@ class Facebook(commands.Cog):
             # Check if in future
             if scheduled_at <= datetime.utcnow():
                 await interaction.response.send_message(
-                    "❌ Schedule time must be in the future!\n\nExample: `2025-11-05 14:30`",
+                    " Schedule time must be in the future!\n\nExample: `2025-11-05 14:30`",
                     ephemeral=True
                 )
                 return
@@ -347,30 +347,30 @@ class Facebook(commands.Cog):
             })
             
             embed = discord.Embed(
-                title="⏰ Facebook Post Scheduled!",
+                title="Facebook Post Scheduled!",
                 description=f"Your post will be published on **{datetime_str} UTC**",
                 color=config.COLOR_WARNING
             )
             embed.add_field(
-                name="📝 Message Preview",
+                name=" Message Preview",
                 value=message[:150] + ('...' if len(message) > 150 else ''),
                 inline=False
             )
             if link:
                 embed.add_field(name="🔗 Link", value=link, inline=False)
-            embed.add_field(name="📄 Page", value=account['page_name'], inline=True)
+            embed.add_field(name="Page", value=account['page_name'], inline=True)
             embed.set_footer(text=f"Scheduled ID: {str(post_id)[:10]}...")
             
             await interaction.response.send_message(embed=embed)
             
         except ValueError:
             await interaction.response.send_message(
-                "❌ Invalid date format!\n\n**Correct format:** YYYY-MM-DD HH:MM\n**Example:** 2025-11-05 14:30",
+                "Invalid date format!\n\n**Correct format:** YYYY-MM-DD HH:MM\n**Example:** 2025-11-05 14:30",
                 ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                f"❌ Scheduling error: {str(e)}",
+                f"Scheduling error: {str(e)}",
                 ephemeral=True
             )
     
@@ -537,11 +537,6 @@ class Facebook(commands.Cog):
     
     @app_commands.command(name="fb-delete", description="Delete a Facebook post")
     @app_commands.describe(post_id="Facebook post ID to delete")
-
-
-
-
-
     async def delete_post(self, interaction: discord.Interaction, post_id: str):
         """Delete a Facebook post"""
         await interaction.response.defer()
@@ -573,13 +568,9 @@ class Facebook(commands.Cog):
                         raise Exception(error)
         
         except Exception as e:
-            await interaction.followup.send(f"❌ Error deleting post: {str(e)}")
+            await interaction.followup.send(f" Error deleting post: {str(e)}")
     
     @app_commands.command(name="fb-page-info", description="Get information about your connected Facebook Page")
-
-
-
-
     async def page_info(self, interaction: discord.Interaction):
         """Get Facebook Page information"""
         await interaction.response.defer()
@@ -588,7 +579,7 @@ class Facebook(commands.Cog):
         account = db.get_facebook_account(server_id)
         
         if not account:
-            await interaction.followup.send("❌ No Facebook Page connected. Use `/fb-connect` first.")
+            await interaction.followup.send(" No Facebook Page connected. Use `/fb-connect` first.")
             return
         
         try:
@@ -608,29 +599,29 @@ class Facebook(commands.Cog):
                     page_data = await resp.json()
                     
                     embed = discord.Embed(
-                        title=f"📘 {page_data.get('name', 'Facebook Page')}",
+                        title=f"{page_data.get('name', 'Facebook Page')}",
                         description=page_data.get('about', 'No description'),
                         color=config.COLOR_FACEBOOK,
                         url=page_data.get('website', f"https://facebook.com/{page_data['id']}")
                     )
                     
                     embed.add_field(
-                        name="👥 Fans/Likes",
+                        name=" Fans/Likes",
                         value=f"{page_data.get('fan_count', 0):,}",
                         inline=True
                     )
                     embed.add_field(
-                        name="📊 Followers",
+                        name="Followers",
                         value=f"{page_data.get('followers_count', 0):,}",
                         inline=True
                     )
                     embed.add_field(
-                        name="📂 Category",
+                        name="Category",
                         value=page_data.get('category', 'Unknown'),
                         inline=True
                     )
                     embed.add_field(
-                        name="🆔 Page ID",
+                        name="Page ID",
                         value=page_data['id'],
                         inline=False
                     )
@@ -641,10 +632,6 @@ class Facebook(commands.Cog):
             await interaction.followup.send(f"❌ Error fetching page info: {str(e)}")
     
     # Helper Methods
-
-
-
-
     async def create_post(self, page_id, access_token, message, link=None):
         """Create a text post on Facebook Page"""
         url = f"{config.FACEBOOK_GRAPH_URL}/{page_id}/feed"
@@ -699,7 +686,7 @@ class Facebook(commands.Cog):
             account = db.get_facebook_account(post['server_id'])
             if not account:
                 db.update_facebook_post_status(post['_id'], 'failed')
-                print(f"❌ No account found for server {post['server_id']}")
+                print(f"No account found for server {post['server_id']}")
                 return
             
             await self.rate_limiter.wait()
@@ -713,10 +700,10 @@ class Facebook(commands.Cog):
             )
             
             db.update_facebook_post_status(post['_id'], 'published', post_id)
-            print(f'✅ Published scheduled Facebook post: {post_id}')
+            print(f'Published scheduled Facebook post: {post_id}')
             
         except Exception as e:
-            print(f'❌ Failed to publish scheduled post {post.get("_id")}: {e}')
+            print(f'Failed to publish scheduled post {post.get("_id")}: {e}')
             db.update_facebook_post_status(post['_id'], 'failed')
 
 
@@ -738,7 +725,7 @@ class RateLimiter:
         if len(self.calls) >= self.max_calls:
             wait_time = self.calls[0] + self.window - now
             if wait_time > 0:
-                print(f'⏸️  Facebook rate limit reached ({self.max_calls}/hour), waiting {wait_time:.0f}s')
+                print(f' Facebook rate limit reached ({self.max_calls}/hour), waiting {wait_time:.0f}s')
                 await asyncio.sleep(wait_time)
                 self.calls = []
         

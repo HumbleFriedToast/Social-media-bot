@@ -21,11 +21,8 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # List of all cogs to load
 COGS = [
-    "cogs.facebook",
     "cogs.instagram",
-    "cogs.linkedin",
-    "cogs.tiktok",
-    "cogs.accounts"
+    "cogs.facebook"
 ]
 
 
@@ -33,37 +30,37 @@ COGS = [
 async def on_ready():
     """Called when the bot is ready."""
     print('\n' + '=' * 70)
-    print(f'🤖 Bot logged in as: {bot.user.name} (ID: {bot.user.id})')
+    print(f'Bot logged in as: {bot.user.name} (ID: {bot.user.id})')
     print('=' * 70)
-    print('\n🔌 Loading extensions...')
+    print('\nLoading extensions...')
 
     for cog in COGS:
         try:
             await bot.load_extension(cog)
-            print(f'✅ Loaded cog: {cog}')
+            print(f'Loaded cog: {cog}')
         except Exception as e:
-            print(f'❌ Failed to load cog {cog}: {e}')
+            print(f' Failed to load cog {cog}: {e}')
             traceback.print_exc()
 
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
-        print(f'\n✅ Synced {len(synced)} slash commands\n')
+        print(f'\n Synced {len(synced)} slash commands\n')
         print("📜 Available Commands:")
         for cmd in synced:
             print(f'  /{cmd.name} - {cmd.description}')
     except Exception as e:
-        print(f'❌ Failed to sync commands: {e}')
+        print(f' Failed to sync commands: {e}')
 
     print('\n' + '=' * 70)
-    print('🤖 Bot is ready! Use commands in Discord.')
+    print('Bot is ready! Use commands in Discord.')
     print('=' * 70 + '\n')
 
 
 @bot.event
 async def on_guild_join(guild):
     """Called when the bot joins a server."""
-    print(f'✅ Bot joined server: {guild.name} (ID: {guild.id})')
+    print(f'Bot joined server: {guild.name} (ID: {guild.id})')
 
 
 @bot.event
@@ -71,7 +68,7 @@ async def on_command_error(ctx, error):
     """Handle command errors."""
     if isinstance(error, commands.CommandNotFound):
         return
-    print(f'❌ Command error: {error}')
+    print(f' Command error: {error}')
 
 
 @bot.event
@@ -91,7 +88,7 @@ if not hasattr(config, "INSTAGRAM_TIME_WINDOW"):
     config.INSTAGRAM_TIME_WINDOW = 60  # seconds
 
 if not hasattr(config, "DISCORD_TOKEN"):
-    raise ValueError("❌ Missing DISCORD_TOKEN in config.py")
+    raise ValueError("Missing DISCORD_TOKEN in config.py")
 
 
 # -------------------------------------------------------------
@@ -104,9 +101,9 @@ try:
             self.instagram_callback = callback
 
         setattr(PostScheduler, "set_instagram_callback", set_instagram_callback)
-        print("🩹 Added missing set_instagram_callback() method to PostScheduler")
+        print("Added missing set_instagram_callback() method to PostScheduler")
 except Exception as e:
-    print(f"⚠️ Could not patch PostScheduler: {e}")
+    print(f" Could not patch PostScheduler: {e}")
 
 
 # -------------------------------------------------------------
@@ -114,10 +111,10 @@ except Exception as e:
 # -------------------------------------------------------------
 if __name__ == "__main__":
     try:
-        print("\n🚀 Starting Social Media Discord Bot...\n")
+        print("\nStarting Social Media Discord Bot...\n")
         bot.run(config.DISCORD_TOKEN)
     except KeyboardInterrupt:
-        print("\n🛑 Bot stopped by user")
+        print("\nBot stopped by user")
     except Exception as e:
-        print(f"\n❌ Fatal error: {e}")
+        print(f"\n Fatal error: {e}")
         traceback.print_exc()
