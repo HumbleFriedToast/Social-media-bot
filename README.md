@@ -88,7 +88,7 @@ alternatively you can use your own APP_ID and APP_SECRET to and get a token for 
 
 
 ## FaceBook Discord Bot Cog
-#Dev:
+# Dev:
 ***NOTES***:Requires MongoDB to be setup. with these parameters: 
 "MONGODB_URI=mongodb://localhost:27017/
 DATABASE_NAME=social_media_bot"
