@@ -16,7 +16,7 @@ This cog allows users to connect their Instagram accounts via OAuth or manually,
 1. Install dependencies:
 
 ```
-pip install discord.py requests python-dotenv
+pip install -r requirements.txt
 ```
 
 2. Create a `.env` file with:
