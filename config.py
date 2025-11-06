@@ -66,3 +66,11 @@ def validate_config():
 
 # Validate on import
 validate_config()
+
+# ================================
+# Instagram Configuration
+# ================================
+INSTAGRAM_GRAPH_URL = "https://graph.instagram.com"
+INSTAGRAM_MAX_CALLS = 100        # Max API calls allowed in rate window
+RATE_LIMIT_WINDOW = 60           # Time window in seconds (same used for rate limiter)
+COLOR_INSTAGRAM = 0xE1306C       # Instagram pink accent color
