@@ -85,7 +85,29 @@ await bot.load_extension("cogs.instagram_cog")
 ***NOTES***: for some reason the Facebook account Oauth method gives an error with the accounts i tried to connect to. but the connection method should be correct so please bare in mind that
 alternatively you can use your own APP_ID and APP_SECRET to and get a token for a developer account using the "insta_login_dev" -Faycal
 
+# Prereqs:
 
+```
+DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN_HERE
+
+FACEBOOK_APP_ID=YOUR_FACEBOOK_APP_ID
+FACEBOOK_APP_SECRET=YOUR_FACEBOOK_APP_SECRET
+
+APP_ID=YOUR_INSTAGRAM_APP_ID
+APP_SECRET=YOUR_INSTAGRAM_APP_SECRET
+
+DEV_TOKEN=YOUR_INSTAGRAM_LONG_LIVED_USER_TOKEN
+
+REDIRECT_URI=http://localhost:8080/callback   # or your deployed callback URL
+
+MONGODB_URI=mongodb://localhost:27017/        # or your MongoDB Atlas URI
+DATABASE_NAME=social_media_bot                # name of the database
+
+ENCRYPTION_KEY=BASE64_32BYTE_KEY_FOR_TOKEN_ENCRYPTION
+
+FACEBOOK_MAX_CALLS=180   # leave as-is
+
+```
 
 ## FaceBook Discord Bot Cog
 
