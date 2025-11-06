@@ -80,12 +80,15 @@ await bot.load_extension("cogs.instagram_cog")
   * `discord_id`: Discord user ID (unique)
   * `username`: Instagram username
   * `instagram_token`: Access token for API calls
+
+# Dev:
 ***NOTES***: for some reason the Facebook account Oauth method gives an error with the accounts i tried to connect to. but the connection method should be correct so please bare in mind that
 alternatively you can use your own APP_ID and APP_SECRET to and get a token for a developer account using the "insta_login_dev"
 
 
 
 ## FaceBook Discord Bot Cog
+#Dev:
 ***NOTES***:Requires MongoDB to be setup. with these parameters: 
 "MONGODB_URI=mongodb://localhost:27017/
 DATABASE_NAME=social_media_bot"
